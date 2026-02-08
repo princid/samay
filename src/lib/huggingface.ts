@@ -4,9 +4,10 @@ const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
 
 /**
  * Processes a single image frame through the Hugging Face AI model
- * to apply anime-style transformation.
+ * to apply anime/ghibli-style transformation.
  *
- * Uses image-to-image pipeline with an anime stylization model.
+ * Uses the instruct-pix2pix model which is designed for instruction-based
+ * image editing via the image-to-image pipeline.
  */
 export async function processFrameToAnime(
   imageBuffer: Buffer
@@ -14,13 +15,15 @@ export async function processFrameToAnime(
   const blob = new Blob([new Uint8Array(imageBuffer)], { type: "image/png" });
 
   const result = await hf.imageToImage({
-    model: "lllyasviel/Annotators",
+    model: "timbrooks/instruct-pix2pix",
     inputs: blob,
     parameters: {
-      prompt: "anime style, high quality anime art",
-      negative_prompt: "realistic, photo, blurry, low quality",
-      strength: 0.65,
+      prompt:
+        "Transform this into Studio Ghibli anime style, cel shaded animation, vibrant colors, anime artwork",
+      negative_prompt:
+        "realistic, photograph, blurry, low quality, distorted, deformed",
       guidance_scale: 7.5,
+      image_guidance_scale: 1.5,
     },
   });
 
@@ -38,11 +41,15 @@ export async function processFrameSimple(
 
   try {
     const result = await hf.imageToImage({
-      model: "stabilityai/stable-diffusion-xl-refiner-1.0",
+      model: "nitrosocke/Ghibli-Diffusion",
       inputs: blob,
       parameters: {
-        prompt: "anime style artwork, cel shaded, vibrant colors",
-        strength: 0.5,
+        prompt:
+          "ghibli style, anime, Studio Ghibli, high quality anime art, cel shaded, vibrant colors",
+        negative_prompt:
+          "realistic, photograph, blurry, low quality, distorted",
+        strength: 0.75,
+        guidance_scale: 7.5,
       },
     });
     const arrayBuffer = await result.arrayBuffer();
