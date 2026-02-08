@@ -31,6 +31,10 @@ export default function ProcessingStatus({
     const pollStatus = async () => {
       try {
         const res = await fetch(`/api/status?id=${conversionId}`);
+        if (!res.ok) {
+          // Job not yet visible — keep polling
+          return;
+        }
         const data: StatusResponse = await res.json();
         setStatus(data);
 

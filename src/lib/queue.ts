@@ -20,8 +20,18 @@ interface QueueJob {
   resultUrl?: string;
 }
 
-/** In-memory job queue for tracking processing status */
-const jobs: Map<string, QueueJob> = new Map();
+/**
+ * In-memory job queue for tracking processing status.
+ * Stored on globalThis so every Next.js API-route bundle shares the same Map
+ * (each route is compiled into its own module scope by webpack / turbopack).
+ */
+const globalForQueue = globalThis as unknown as {
+  __samayJobs?: Map<string, QueueJob>;
+};
+if (!globalForQueue.__samayJobs) {
+  globalForQueue.__samayJobs = new Map<string, QueueJob>();
+}
+const jobs: Map<string, QueueJob> = globalForQueue.__samayJobs;
 
 export function getJobStatus(conversionId: string): QueueJob | undefined {
   return jobs.get(conversionId);
