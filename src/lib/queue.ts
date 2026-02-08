@@ -6,6 +6,9 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
+/** Frames per second used for extraction and assembly */
+const DEFAULT_FPS = 2;
+
 interface QueueJob {
   id: string;
   videoPath: string;
@@ -66,7 +69,7 @@ async function processVideo(job: QueueJob): Promise<void> {
 
   try {
     // Step 1: Extract frames
-    const result = await extractFrames(job.videoPath, 2);
+    const result = await extractFrames(job.videoPath, DEFAULT_FPS);
     framesDir = result.framesDir;
     job.totalFrames = result.frameCount;
 
@@ -111,7 +114,7 @@ async function processVideo(job: QueueJob): Promise<void> {
       os.tmpdir(),
       `samay-output-${Date.now()}.mp4`
     );
-    await assembleVideo(processedDir, outputPath, 2);
+    await assembleVideo(processedDir, outputPath, DEFAULT_FPS);
 
     // Step 4: Upload result to Cloudinary
     const { url } = await uploadToCloudinary(outputPath);

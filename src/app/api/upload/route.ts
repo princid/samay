@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      if (!file.name.endsWith(".mp4") && file.type !== "video/mp4") {
+      if (!file.name.toLowerCase().endsWith(".mp4") && file.type !== "video/mp4") {
         return NextResponse.json(
           { error: "Only .mp4 files are supported" },
           { status: 400 }

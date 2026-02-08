@@ -17,7 +17,7 @@ export default function UploadZone({ onUploadStart }: UploadZoneProps) {
       if (acceptedFiles.length === 0) return;
 
       const file = acceptedFiles[0];
-      if (!file.name.endsWith(".mp4")) {
+      if (!file.name.toLowerCase().endsWith(".mp4")) {
         setError("Only .mp4 files are supported.");
         return;
       }

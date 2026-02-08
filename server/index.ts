@@ -1,8 +1,10 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import multer from "multer";
+import rateLimit from "express-rate-limit";
 import path from "path";
 import os from "os";
+import fs from "fs";
 import { createConversion, getConversion, getConversionHistory, updateConversion } from "../src/lib/supabase";
 import { enqueueConversion, getJobStatus, getAllJobs } from "../src/lib/queue";
 
@@ -12,11 +14,20 @@ const PORT = process.env.SERVER_PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Rate limiter for upload endpoint
+const uploadLimiter = rateLimit({
+  windowMs: 60_000, // 1 minute
+  max: 10, // max 10 requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again later." },
+});
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     const uploadDir = path.join(os.tmpdir(), "samay-uploads");
-    require("fs").mkdirSync(uploadDir, { recursive: true });
+    fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
   filename: (_req, file, cb) => {
@@ -42,7 +53,7 @@ app.get("/health", (_req, res) => {
 });
 
 // Upload video
-app.post("/api/upload", upload.single("video"), async (req, res) => {
+app.post("/api/upload", uploadLimiter, upload.single("video"), async (req, res) => {
   try {
     let videoPath: string;
 
@@ -57,7 +68,7 @@ app.post("/api/upload", upload.single("video"), async (req, res) => {
       }
       const buffer = Buffer.from(await response.arrayBuffer());
       videoPath = path.join(os.tmpdir(), "samay-uploads", `download-${Date.now()}.mp4`);
-      require("fs").writeFileSync(videoPath, buffer);
+      fs.writeFileSync(videoPath, buffer);
     } else {
       res.status(400).json({ error: "No video file or URL provided" });
       return;
