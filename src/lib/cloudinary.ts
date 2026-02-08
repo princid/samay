@@ -8,6 +8,15 @@ cloudinary.config({
 
 export default cloudinary;
 
+/** Returns true when the required env vars are present */
+export function isCloudinaryConfigured(): boolean {
+  return !!(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+  );
+}
+
 export async function uploadToCloudinary(
   filePath: string,
   folder: string = "samay-uploads"

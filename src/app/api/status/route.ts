@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
       progress: job.progress,
       totalFrames: job.totalFrames,
       processedFrames: job.processedFrames,
+      resultUrl: job.resultUrl,
     });
   }
 

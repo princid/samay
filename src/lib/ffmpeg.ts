@@ -4,6 +4,25 @@ import fs from "fs";
 import os from "os";
 
 /**
+ * Resolve FFmpeg binary path at runtime.
+ * The ffmpeg-static import is broken under Next.js Turbopack because the
+ * bundler rewrites the path to something like "\ROOT\node_modules\...".
+ * Instead, we locate the binary ourselves.
+ */
+function resolveFfmpegPath(): string {
+  // 1. Check node_modules relative to project root
+  const platform = process.platform;
+  const binaryName = platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  const staticPath = path.join(process.cwd(), "node_modules", "ffmpeg-static", binaryName);
+  if (fs.existsSync(staticPath)) return staticPath;
+
+  // 2. Fallback: rely on ffmpeg being on system PATH
+  return "ffmpeg";
+}
+
+ffmpeg.setFfmpegPath(resolveFfmpegPath());
+
+/**
  * Extracts frames from a video file at the specified FPS rate.
  * Returns the directory containing extracted frames and the frame count.
  */

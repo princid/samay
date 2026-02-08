@@ -1,7 +1,7 @@
 import { updateConversion } from "./supabase";
 import { extractFrames, assembleVideo, cleanupDir } from "./ffmpeg";
 import { processFrameToAnime, processFrameSimple } from "./huggingface";
-import { uploadToCloudinary } from "./cloudinary";
+import { uploadToCloudinary, isCloudinaryConfigured } from "./cloudinary";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -17,6 +17,7 @@ interface QueueJob {
   progress: number;
   totalFrames: number;
   processedFrames: number;
+  resultUrl?: string;
 }
 
 /** In-memory job queue for tracking processing status */
@@ -110,31 +111,40 @@ async function processVideo(job: QueueJob): Promise<void> {
     }
 
     // Step 3: Reassemble video
-    const outputPath = path.join(
-      os.tmpdir(),
-      `samay-output-${Date.now()}.mp4`
-    );
+    const outputDir = path.join(process.cwd(), "public", "results");
+    fs.mkdirSync(outputDir, { recursive: true });
+    const outputFilename = `samay-output-${Date.now()}.mp4`;
+    const outputPath = path.join(outputDir, outputFilename);
     await assembleVideo(processedDir, outputPath, DEFAULT_FPS);
 
-    // Step 4: Upload result to Cloudinary
-    const { url } = await uploadToCloudinary(outputPath);
+    // Step 4: Upload result — try Cloudinary, fall back to local public/ dir
+    let resultUrl: string;
+    if (isCloudinaryConfigured()) {
+      try {
+        const { url } = await uploadToCloudinary(outputPath);
+        resultUrl = url;
+        // Remove local copy since it's on Cloudinary
+        try { fs.unlinkSync(outputPath); } catch { /* ignore */ }
+      } catch (err) {
+        console.warn("Cloudinary upload failed, serving locally:", err);
+        resultUrl = `/results/${outputFilename}`;
+      }
+    } else {
+      resultUrl = `/results/${outputFilename}`;
+    }
 
     // Step 5: Update status to completed
     job.status = "completed";
     job.progress = 100;
+    job.resultUrl = resultUrl;
     await updateConversion(job.conversionId, {
       status: "completed",
-      result_url: url,
+      result_url: resultUrl,
     });
 
     // Cleanup temporary files
     cleanupDir(framesDir);
     cleanupDir(processedDir);
-    try {
-      fs.unlinkSync(outputPath);
-    } catch {
-      /* ignore */
-    }
     try {
       fs.unlinkSync(job.videoPath);
     } catch {

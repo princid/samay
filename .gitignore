@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated output videos
+/public/results/
+
+# test files
+test-upload.mjs
