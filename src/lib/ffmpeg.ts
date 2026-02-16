@@ -53,21 +53,31 @@ export async function extractFrames(
 
 /**
  * Reassembles processed frames into a video file.
+ *
+ * Uses simple frame-rate up-scaling (fps filter) instead of the extremely
+ * slow minterpolate algorithm.  Each source frame is duplicated to hit the
+ * target FPS, which is near-instant and avoids the multi-minute stalls that
+ * motion-compensation interpolation causes.
  */
 export async function assembleVideo(
   framesDir: string,
   outputPath: string,
   fps: number = 2
 ): Promise<string> {
+  // Target a smooth output framerate by duplicating frames.
+  const outputFps = Math.max(fps * 6, 24);
+
   return new Promise((resolve, reject) => {
     ffmpeg()
       .input(path.join(framesDir, "frame-%04d.png"))
       .inputOptions([`-framerate ${fps}`])
       .outputOptions([
+        // Simple up-scale: duplicate frames to outputFps (instant)
+        `-vf fps=${outputFps}`,
         "-c:v libx264",
         "-pix_fmt yuv420p",
         "-crf 23",
-        "-preset fast",
+        "-preset veryfast",
       ])
       .output(outputPath)
       .on("end", () => resolve(outputPath))

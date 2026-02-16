@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 interface StatusResponse {
   conversionId: string;
   status: "pending" | "processing" | "completed" | "failed";
+  phase?: "queued" | "extracting" | "ai-processing" | "assembling" | "uploading" | "done";
   progress: number;
   totalFrames: number;
   processedFrames: number;
@@ -27,14 +28,21 @@ export default function ProcessingStatus({
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
+    let elapsed = 0;
+    const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes
+    const POLL_INTERVAL = 2000;
 
     const pollStatus = async () => {
+      elapsed += POLL_INTERVAL;
+      if (elapsed > MAX_POLL_MS) {
+        clearInterval(interval);
+        onError("Processing timed out — the video may be too long or the server is under heavy load.");
+        return;
+      }
+
       try {
         const res = await fetch(`/api/status?id=${conversionId}`);
-        if (!res.ok) {
-          // Job not yet visible — keep polling
-          return;
-        }
+        if (!res.ok) return;
         const data: StatusResponse = await res.json();
         setStatus(data);
 
@@ -50,23 +58,45 @@ export default function ProcessingStatus({
       }
     };
 
-    pollStatus();
-    interval = setInterval(pollStatus, 2000);
+    // First poll immediately (doesn't count toward timeout)
+    (async () => {
+      try {
+        const res = await fetch(`/api/status?id=${conversionId}`);
+        if (res.ok) {
+          const data: StatusResponse = await res.json();
+          setStatus(data);
+          if (data.status === "completed" && data.resultUrl) {
+            onComplete(data.resultUrl);
+            return;
+          }
+          if (data.status === "failed") {
+            onError(data.errorMessage ?? "Processing failed");
+            return;
+          }
+        }
+      } catch { /* ignore */ }
+      interval = setInterval(pollStatus, POLL_INTERVAL);
+    })();
 
     return () => clearInterval(interval);
   }, [conversionId, onComplete, onError]);
 
   const progress = status?.progress ?? 0;
-  const statusText =
-    status?.status === "pending"
-      ? "Queued — waiting to start..."
-      : status?.status === "processing"
-        ? `Processing frames (${status.processedFrames}/${status.totalFrames})...`
-        : status?.status === "completed"
-          ? "Complete!"
-          : status?.status === "failed"
-            ? "Failed"
-            : "Initializing...";
+
+  const phaseLabels: Record<string, string> = {
+    queued: "Queued — waiting to start...",
+    extracting: "Extracting video frames...",
+    "ai-processing": `Applying Ghibli style (${status?.processedFrames ?? 0}/${status?.totalFrames ?? 0} frames)...`,
+    assembling: "Assembling final video...",
+    uploading: "Uploading result...",
+    done: "Complete!",
+  };
+
+  const statusText = status?.phase
+    ? phaseLabels[status.phase] ?? "Processing..."
+    : status?.status === "failed"
+      ? "Failed"
+      : "Initializing...";
 
   return (
     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 space-y-4">

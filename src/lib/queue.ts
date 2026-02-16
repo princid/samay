@@ -14,6 +14,7 @@ interface QueueJob {
   videoPath: string;
   conversionId: string;
   status: "pending" | "processing" | "completed" | "failed";
+  phase: "queued" | "extracting" | "ai-processing" | "assembling" | "uploading" | "done";
   progress: number;
   totalFrames: number;
   processedFrames: number;
@@ -54,6 +55,7 @@ export async function enqueueConversion(
     videoPath,
     conversionId,
     status: "pending",
+    phase: "queued",
     progress: 0,
     totalFrames: 0,
     processedFrames: 0,
@@ -80,6 +82,7 @@ async function processVideo(job: QueueJob): Promise<void> {
 
   try {
     // Step 1: Extract frames
+    job.phase = "extracting";
     const result = await extractFrames(job.videoPath, DEFAULT_FPS);
     framesDir = result.framesDir;
     job.totalFrames = result.frameCount;
@@ -89,6 +92,7 @@ async function processVideo(job: QueueJob): Promise<void> {
     });
 
     // Step 2: Process each frame through AI
+    job.phase = "ai-processing";
     processedDir = path.join(os.tmpdir(), `samay-processed-${Date.now()}`);
     fs.mkdirSync(processedDir, { recursive: true });
 
@@ -121,6 +125,7 @@ async function processVideo(job: QueueJob): Promise<void> {
     }
 
     // Step 3: Reassemble video
+    job.phase = "assembling";
     const outputDir = path.join(process.cwd(), "public", "results");
     fs.mkdirSync(outputDir, { recursive: true });
     const outputFilename = `samay-output-${Date.now()}.mp4`;
@@ -128,6 +133,7 @@ async function processVideo(job: QueueJob): Promise<void> {
     await assembleVideo(processedDir, outputPath, DEFAULT_FPS);
 
     // Step 4: Upload result — try Cloudinary, fall back to local public/ dir
+    job.phase = "uploading";
     let resultUrl: string;
     if (isCloudinaryConfigured()) {
       try {
@@ -145,6 +151,7 @@ async function processVideo(job: QueueJob): Promise<void> {
 
     // Step 5: Update status to completed
     job.status = "completed";
+    job.phase = "done";
     job.progress = 100;
     job.resultUrl = resultUrl;
     await updateConversion(job.conversionId, {

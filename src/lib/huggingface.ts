@@ -1,64 +1,124 @@
-import { HfInference } from "@huggingface/inference";
+import { InferenceClient } from "@huggingface/inference";
 
-const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+const hf = new InferenceClient(process.env.HUGGINGFACE_API_KEY);
 
 /**
- * Processes a single image frame through the Hugging Face AI model
- * to apply anime/ghibli-style transformation.
- *
- * Uses the instruct-pix2pix model which is designed for instruction-based
- * image editing via the image-to-image pipeline.
+ * Ordered list of model + provider combos to try.
+ * The free `hf-inference` provider has ZERO image-to-image models,
+ * so we must target providers that actually host them (fal-ai, novita,
+ * replicate, etc.).  The user's HF token must have the provider enabled
+ * at https://hf.co/settings/inference-providers.
+ */
+const MODEL_CONFIGS = [
+  {
+    model: "black-forest-labs/FLUX.1-Kontext-dev",
+    provider: "fal-ai" as const,
+    prompt:
+      "Transform this image into Studio Ghibli anime style, hand-drawn animation, cel shaded, vibrant colors, masterpiece",
+    negativePrompt:
+      "realistic, photo, 3d render, distorted faces, blurry, grainy, lowres, text, watermark",
+    strength: 0.75,
+    guidance: 12.0,
+  },
+  {
+    model: "black-forest-labs/FLUX.1-Kontext-dev",
+    provider: "replicate" as const,
+    prompt:
+      "Transform this image into Studio Ghibli anime style, hand-drawn animation, cel shaded, vibrant colors, masterpiece",
+    negativePrompt:
+      "realistic, photo, 3d render, distorted faces, blurry, grainy, lowres, text, watermark",
+    strength: 0.75,
+    guidance: 12.0,
+  },
+  {
+    model: "nitrosocke/Ghibli-Diffusion",
+    provider: "novita" as const,
+    prompt:
+      "ghibli style, cinematic anime art, studio ghibli, hand-drawn animation, cel shaded, vibrant colors, masterpiece",
+    negativePrompt:
+      "realistic, photo, 3d render, distorted faces, blurry, grainy, lowres, text, watermark",
+    strength: 0.75,
+    guidance: 12.0,
+  },
+];
+
+/** Track which config index works to avoid re-trying bad ones. */
+let workingConfigIdx: number | null = null;
+let allConfigsFailed = false;
+
+/**
+ * Processes a single image frame through the Hugging Face Inference API.
+ * Tries multiple model+provider combos until one succeeds, then sticks with it.
  */
 export async function processFrameToAnime(
   imageBuffer: Buffer
 ): Promise<Buffer> {
+  if (allConfigsFailed) return imageBuffer;
+
   const blob = new Blob([new Uint8Array(imageBuffer)], { type: "image/png" });
 
+  // If we already found a working config, use it directly
+  if (workingConfigIdx !== null) {
+    return callModel(blob, MODEL_CONFIGS[workingConfigIdx]);
+  }
+
+  // Try each config until one works
+  for (let i = 0; i < MODEL_CONFIGS.length; i++) {
+    try {
+      const result = await callModel(blob, MODEL_CONFIGS[i]);
+      workingConfigIdx = i;
+      console.log(
+        `✓ Using ${MODEL_CONFIGS[i].model} via ${MODEL_CONFIGS[i].provider}`
+      );
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `Model ${MODEL_CONFIGS[i].model} (${MODEL_CONFIGS[i].provider}) failed: ${msg}`
+      );
+    }
+  }
+
+  // All configs exhausted
+  allConfigsFailed = true;
+  console.warn(
+    "⚠ All AI models failed. Returning original frames.\n" +
+      "  To enable Ghibli-style conversion:\n" +
+      "  1. Get an API key from https://huggingface.co/settings/tokens\n" +
+      "  2. Enable a provider (fal-ai, replicate, or novita) at\n" +
+      "     https://hf.co/settings/inference-providers\n" +
+      "  3. Set HUGGINGFACE_API_KEY in your .env.local"
+  );
+  return imageBuffer;
+}
+
+async function callModel(
+  blob: Blob,
+  config: (typeof MODEL_CONFIGS)[number]
+): Promise<Buffer> {
   const result = await hf.imageToImage({
-    model: "timbrooks/instruct-pix2pix",
+    model: config.model,
+    provider: config.provider,
     inputs: blob,
     parameters: {
-      prompt:
-        "Transform this into Studio Ghibli anime style, cel shaded animation, vibrant colors, anime artwork",
-      negative_prompt:
-        "realistic, photograph, blurry, low quality, distorted, deformed",
-      guidance_scale: 7.5,
-      image_guidance_scale: 1.5,
+      prompt: config.prompt,
+      negative_prompt: config.negativePrompt,
+      strength: config.strength,
+      guidance_scale: config.guidance,
     },
   });
-
   const arrayBuffer = await result.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
 
 /**
- * Fallback: Use a simpler model if the primary one is unavailable.
+ * Simplified fallback — just delegates to the main function which
+ * already handles provider fallback internally.
  */
 export async function processFrameSimple(
   imageBuffer: Buffer
 ): Promise<Buffer> {
-  const blob = new Blob([new Uint8Array(imageBuffer)], { type: "image/png" });
-
-  try {
-    const result = await hf.imageToImage({
-      model: "nitrosocke/Ghibli-Diffusion",
-      inputs: blob,
-      parameters: {
-        prompt:
-          "ghibli style, anime, Studio Ghibli, high quality anime art, cel shaded, vibrant colors",
-        negative_prompt:
-          "realistic, photograph, blurry, low quality, distorted",
-        strength: 0.75,
-        guidance_scale: 7.5,
-      },
-    });
-    const arrayBuffer = await result.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-  } catch {
-    // If all models fail, return original frame
-    console.warn("AI processing failed, returning original frame");
-    return imageBuffer;
-  }
+  return processFrameToAnime(imageBuffer);
 }
 
 export { hf };

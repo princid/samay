@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       conversionId: job.conversionId,
       status: job.status,
+      phase: job.phase,
       progress: job.progress,
       totalFrames: job.totalFrames,
       processedFrames: job.processedFrames,
